@@ -1,0 +1,7 @@
+# py -3.12 -m pip install <libraryName>
+pandas
+torch
+torchvision
+torchaudio
+transformers
+scikit-learn
