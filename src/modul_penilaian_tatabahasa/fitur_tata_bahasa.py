@@ -1,100 +1,100 @@
-import torch
-from transformers import BertTokenizer, BertForSequenceClassification
+from modul_pengecekan_tatabahasa.main import load_grammar_checker_model, check_grammar
+import spacy
 from textblob import TextBlob
-import nltk
-nltk.download('punkt')
-from nltk.tokenize import sent_tokenize, word_tokenize
-import re
+import jamspell
 
-# Load model grammar checker
-model_path = "./models/bert_cola_model"
-tokenizer = BertTokenizer.from_pretrained(model_path)
-model = BertForSequenceClassification.from_pretrained(model_path)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
-model.eval()
+# === Load grammar checker model ===
+tokenizer, model, device = load_grammar_checker_model()
 
-def predict_grammar(sentences):
-    inputs = tokenizer(sentences, padding=True, truncation=True, return_tensors="pt", max_length=128)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-    with torch.no_grad():
-        outputs = model(**inputs)
-        preds = torch.argmax(outputs.logits, dim=1)
-    return preds.cpu().numpy()
+# Load SpaCy model for dependency parsing
+nlp = spacy.load("en_core_web_sm")
 
-def extract_grammar_features(essay):
-    sentences = sent_tokenize(essay)
-    STg = len(sentences)
-    sentence_preds = predict_grammar(sentences)
+# Load Jamspell corrector
+jamspell_corrector = jamspell.TSpellCorrector()
+jamspell_corrector.LoadLangModel('en.bin')  # Pastikan path benar
+
+def fix_spelling_with_textblob(text):
+    """Perbaikan ejaan menggunakan TextBlob"""
+    return str(TextBlob(text).correct())
+
+def fix_spelling_with_jamspell(text):
+    """Perbaikan ejaan menggunakan Jamspell"""
+    return jamspell_corrector.FixFragment(text)
+
+def find_wrong_spelling_combined(text):
+    """Gabungkan deteksi salah eja dari TextBlob dan Jamspell"""
+    words = text.split()
+    wrong_spelling = []
+
+    for word in words:
+        tb_corrected = str(TextBlob(word).correct())
+        js_corrected = jamspell_corrector.FixFragment(word)
+        
+        best_correction = tb_corrected if tb_corrected != word else js_corrected
+        if word != best_correction:
+            wrong_spelling.append((word, best_correction))
     
-    sentence_analysis = []
-    spelling_mistakes = []
-    all_words = []
+    return wrong_spelling
 
-    for i, sentence in enumerate(sentences):
-        corrected = str(TextBlob(sentence).correct())
-        status = "Benar" if sentence_preds[i] == 0 else "Salah"
-        sentence_analysis.append({
-            "kalimat": sentence,
-            "status": status,
-            "koreksi": corrected
-        })
+def count_clauses(doc):
+    """Menghitung jumlah klausa dari kalimat + klausa subordinat"""
+    return sum(1 for sent in doc.sents for token in sent if token.dep_ in ["ccomp", "advcl", "relcl", "acl"]) + len(list(doc.sents))
 
-        words = word_tokenize(sentence)
-        all_words.extend(words)
-        for w in words:
-            corrected_word = str(TextBlob(w).correct())
-            if corrected_word != w:
-                spelling_mistakes.append({
-                    "kata": w,
-                    "koreksi": corrected_word,
-                    "kalimat_ke": i + 1
-                })
+def extract_grammar_features(essay: str):
+    """Ekstraksi fitur tata bahasa dan ejaan dari teks esai"""
+    doc = nlp(essay)
+    sentences = list(doc.sents)
 
-    corrected_sentences = [s["koreksi"] for s in sentence_analysis]
-    SWg = sum([1 for s in sentence_analysis if s["status"] == "Salah"])
-    SWg_new = sum(predict_grammar(corrected_sentences))
+    # === Fitur Kalimat ===
+    STg = len(sentences)  # Total kalimat
+    sent_texts = [s.text.strip() for s in sentences]
 
-    WTg = len(all_words)
-    Ws = len(spelling_mistakes)
-    words_per_sent = WTg / STg if STg > 0 else 0
+    SWg_preds = check_grammar(sent_texts, tokenizer, model, device)
+    SWg = sum(1 for pred in SWg_preds if pred == 1)  # Kalimat salah grammar
 
-    clauses = re.split(r'[;,]', essay)
-    CTg = len(clauses)
-    clause_preds = predict_grammar(clauses)
-    
-    clause_analysis = []
-    for i, clause in enumerate(clauses):
-        corrected = str(TextBlob(clause).correct())
-        status = "Benar" if clause_preds[i] == 0 else "Salah"
-        clause_analysis.append({
-            "klausa": clause.strip(),
-            "status": status,
-            "koreksi": corrected
-        })
+    # === Perbaikan ejaan (TextBlob + Jamspell) dan evaluasi ulang grammar ===
+    fixed_sentences = [fix_spelling_with_jamspell(fix_spelling_with_textblob(s)) for s in sent_texts]
+    SWg_new_preds = check_grammar(fixed_sentences, tokenizer, model, device)
+    SWg_new = sum(1 for pred in SWg_new_preds if pred == 1)
 
-    corrected_clauses = [c["koreksi"] for c in clause_analysis]
-    CWg = sum([1 for c in clause_analysis if c["status"] == "Salah"])
-    CWg_new = sum(predict_grammar(corrected_clauses))
-    words_per_clause = WTg / CTg if CTg > 0 else 0
+    # === Fitur Kata ===
+    tokens = [token.text for token in doc if token.is_alpha]
+    WTs = len(tokens)  # Total kata
 
-    return {
-        "summary": {
-            "STg": STg,
-            "SWg": SWg,
-            "SWg_new": SWg_new,
-            "WTg": WTg,
-            "Ws": Ws,
-            "CTg": CTg,
-            "CWg": CWg,
-            "CWg_new": CWg_new,
-            "WTg/STg": round(words_per_sent, 2),
-            "WTg/CTg": round(words_per_clause, 2),
-            "SWg/STg": round(SWg / STg, 2) if STg else 0,
-            "CWg/CTg": round(CWg / CTg, 2) if CTg else 0,
-            "Ws/WTg": round(Ws / WTg, 2) if WTg else 0
-        },
-        "per_kalimat": sentence_analysis,
-        "per_klausa": clause_analysis,
-        "kesalahan_ejaan": spelling_mistakes
+    wrong_spelling_details = []
+    for sentence in sent_texts:
+        wrong_spelling_details.extend(find_wrong_spelling_combined(sentence))
+    Ws = len(wrong_spelling_details)  # Kata salah eja
+
+    # === Fitur Klausa ===
+    CTg = count_clauses(doc)  # Total klausa
+    CWg = SWg  # Klausa salah grammar = jumlah kalimat salah
+    CWg_new = SWg_new  # Setelah perbaikan ejaan
+
+    # === Output fitur tata bahasa & ejaan ===
+    grammar_features = {
+        # Kalimat
+        "STg": STg,
+        "SWg": SWg,
+        "SWg_new": SWg_new,
+        "Grammar_Ratio_Sentence": SWg / STg if STg else 0,
+
+        # Kata
+        "WTs": WTs,
+        "Ws": Ws,
+        "Spelling_Ratio": Ws / WTs if WTs else 0,
+        "Words_per_Sentence": WTs / STg if STg else 0,
+        "Words_per_Clause": WTs / CTg if CTg else 0,
+
+        # Klausa
+        "CTg": CTg,
+        "CWg": CWg,
+        "CWg_new": CWg_new,
+        "Grammar_Ratio_Clause": CWg / CTg if CTg else 0,
     }
+
+    spelling_corrections = {
+        "Wrong_Spelling_Details": wrong_spelling_details
+    }
+
+    return grammar_features, spelling_corrections

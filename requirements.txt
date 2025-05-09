@@ -9,3 +9,4 @@ datasets==2.12.0
 onnx==1.14.0
 textblob==0.17.1
 nltk==3.8.1
+jamspell

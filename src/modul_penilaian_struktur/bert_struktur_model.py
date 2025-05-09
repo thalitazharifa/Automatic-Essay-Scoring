@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import time
 import os
+import json
 from transformers import BertTokenizer, BertModel
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import cohen_kappa_score
@@ -13,7 +14,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Menggunakan perangkat: {device}")
 
 # === Load Dataset ===
-data = pd.read_csv('E:/Bebeb/NEW/AES/data/pre-processing-data/training/training_data.csv')
+data = pd.read_csv('E:\Kuliah\Tugas Akhir\AES\code\AES\data\pre-processing-data\training\training_data.csv')
 
 # === Tokenisasi ===
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -93,27 +94,48 @@ for epoch in range(num_epochs):
 
 print("Training selesai!")
 
-# === Save Model ===
-save_path = "models/bert_struktur_model_v2"
+# === Save Model, Tokenizer, and Config ===
+save_path = "models/bert_struktur_model"
 os.makedirs(save_path, exist_ok=True)
-torch.save(model.state_dict(), f"{save_path}/structure_model.bin")
 
-# Dummy input untuk ekspor ONNX
+# 1. Save tokenizer
+tokenizer.save_pretrained(save_path)
+
+# 2. Save custom config
+custom_config = {
+    "bert_model": "bert-base-uncased",
+    "lstm1_hidden_size": 400,
+    "lstm2_hidden_size": 128,
+    "dropout": 0.5,
+    "output_dim": 1,
+    "max_length": 512
+}
+with open(os.path.join(save_path, "config.json"), "w") as f:
+    json.dump(custom_config, f, indent=4)
+
+# 3. Save model weights
+torch.save(model.state_dict(), os.path.join(save_path, "structure_model.bin"))
+
+# 4. Save ONNX
 dummy_input_ids = torch.randint(0, tokenizer.vocab_size, (1, 512)).to(device)
 dummy_attention_mask = torch.ones((1, 512)).to(device)
 
 torch.onnx.export(
     model,
     (dummy_input_ids, dummy_attention_mask),
-    f"{save_path}/structure_model.onnx",
+    os.path.join(save_path, "structure_model.onnx"),
     input_names=["input_ids", "attention_mask"],
     output_names=["structure_score"],
-    dynamic_axes={"input_ids": {0: "batch_size"}, "attention_mask": {0: "batch_size"}, "structure_score": {0: "batch_size"}}
+    dynamic_axes={
+        "input_ids": {0: "batch_size"},
+        "attention_mask": {0: "batch_size"},
+        "structure_score": {0: "batch_size"}
+    }
 )
 
-print(f"Model disimpan di: {save_path}")
+print(f"Model lengkap disimpan di: {save_path}")
 
-# === Evaluasi (QWK) ===
+    # === Evaluasi (QWK) ===
 def quadratic_weighted_kappa(y_true, y_pred, min_rating=0, max_rating=10):
     y_true = np.clip(np.round(y_true), min_rating, max_rating).astype(int)
     y_pred = np.clip(np.round(y_pred), min_rating, max_rating).astype(int)
@@ -122,7 +144,7 @@ def quadratic_weighted_kappa(y_true, y_pred, min_rating=0, max_rating=10):
 model.eval()
 true_labels, pred_labels = [], []
 
-results_save_folder = "E:/Bebeb/NEW/AES/data/result/modul_penilaian_struktur_v2"
+results_save_folder = "E:\Kuliah\Tugas Akhir\AES\code\AES\data\result\modul_penilaian_struktur"
 os.makedirs(results_save_folder, exist_ok=True)
 
 with torch.no_grad():
@@ -137,11 +159,14 @@ with torch.no_grad():
 qwk = quadratic_weighted_kappa(np.array(true_labels), np.array(pred_labels))
 print(f"QWK di data training: {qwk:.4f}")
 
+with open("qwk_training_log.txt", "w") as f:
+    f.write(f"QWK di data training: {qwk:.4f}\n")
+
 results = pd.DataFrame({
     'essay': essays,
     'true_score': true_labels,
     'predicted_score': pred_labels
 })
 
-results.to_csv(f"{results_save_folder}/modul_penilaian_struktur_v2_qwk_training.csv", index=False)
+results.to_csv(f"{results_save_folder}/modul_penilaian_struktur_qwk_training.csv", index=False)
 print(f"Hasil prediksi disimpan di: {results_save_folder}")

@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # Membaca dataset dari file .tsv
-raw_data = pd.read_csv('E:/Bebeb/NEW/AES/data/asap-aes/training_set_rel3.tsv', sep='\t', encoding='ISO-8859-1')
+raw_data = pd.read_csv('E:\Kuliah\Tugas Akhir\AES\code\AES\data\asap-aes\training_set_rel3.tsv', sep='\t', encoding='ISO-8859-1')
 
 # Menyaring data untuk hanya mengambil essay_set dengan nilai 7
 filtered_dataset = raw_data[raw_data['essay_set'] == 7].copy()
