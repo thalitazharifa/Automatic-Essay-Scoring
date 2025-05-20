@@ -1,11 +1,9 @@
-# grammar_checker/main.py
-
 import torch
 from transformers import BertTokenizer, BertForSequenceClassification
-import os
+# import os
 
 # === Load Model dan Tokenizer ===
-def load_grammar_checker_model(model_path="E:\Kuliah\Tugas Akhir\AES\code\AES\models\bert_struktur_model"):
+def load_grammar_checker_model(model_path="models/bert_cola_model"):
     tokenizer = BertTokenizer.from_pretrained(model_path)
     model = BertForSequenceClassification.from_pretrained(model_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,9 +18,10 @@ def check_grammar(sentences, tokenizer, model, device):
 
     inputs = tokenizer(
         sentences,
-        padding=True,
+        padding="max_length",
         truncation=True,
-        return_tensors="pt"
+        return_tensors="pt",
+        max_length=512
     )
 
     input_ids = inputs["input_ids"].to(device)

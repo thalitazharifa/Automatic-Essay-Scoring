@@ -1,15 +1,16 @@
-# Import library
 import pandas as pd
 import numpy as np
+import os
 
 # Membaca dataset dari file .tsv
-raw_data = pd.read_csv('E:\Kuliah\Tugas Akhir\AES\code\AES\data\asap-aes\training_set_rel3.tsv', sep='\t', encoding='ISO-8859-1')
+raw_data = pd.read_csv('data\asap-aes\training_set_rel3.tsv', sep='\t', encoding='ISO-8859-1')
 
 # Menyaring data untuk hanya mengambil essay_set dengan nilai 7
 filtered_dataset = raw_data[raw_data['essay_set'] == 7].copy()
 
 # Menyimpan dataset yang telah disaring ke dalam file CSV
-filtered_dataset.to_csv('aes_dataset_value_7.csv', index=False)
+output_file = 'data/pre-processing-data/aes_dataset_value_7.csv'
+filtered_dataset.to_csv(output_file, index=False)
 
 # Menentukan kolom yang akan digabungkan untuk skor Struktur
 skor_struktur = ['rater1_trait1', 'rater1_trait2', 'rater1_trait3', 'rater2_trait1', 'rater2_trait2', 'rater2_trait3']
@@ -47,7 +48,12 @@ pre_processing_data = ['essay_id', 'essay_set', 'essay', 'skor_struktur_normaliz
 # Membuat dataset akhir yang berisi data yang sudah diproses
 final_pre_processing_data = filtered_dataset[pre_processing_data]
 
-# Menyimpan data hasil pre-processing ke dalam file CSV
-final_pre_processing_data.to_csv('data/pre-processing-data/pre_processing_data.csv', index=False)
+# Tentukan path untuk menyimpan file CSV
+output_dir = 'data/pre-processing-data'
+os.makedirs(output_dir, exist_ok=True)
 
-print("Proses pre-processing selesai, file telah disimpan sebagai 'pre_processing_data.csv'")
+# Menyimpan data hasil pre-processing ke dalam file CSV
+pre_processed_file = os.path.join(output_dir, 'pre_processing_data.csv')
+final_pre_processing_data.to_csv(pre_processed_file, index=False)
+
+print(f"Proses pre-processing selesai, file telah disimpan sebagai '{pre_processed_file}'")
